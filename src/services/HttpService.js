@@ -7,7 +7,10 @@ const API = axios.create({
   }
 });
 
-// Automatically inject JWT authorization token on all outgoing requests if it exists in session
+// Attach the JWT token (saved on login in AuthContext) to every outgoing
+// request. Without this, every call to a protected endpoint (equipment,
+// orders, maintenance, ...) is rejected with 403 Forbidden since the
+// backend now requires authentication on all routes except login/register.
 API.interceptors.request.use(
   (config) => {
     const savedUser = sessionStorage.getItem("medtrack_user");
