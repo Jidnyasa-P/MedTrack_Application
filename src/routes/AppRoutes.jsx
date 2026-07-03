@@ -66,7 +66,7 @@ export default function AppRouter({ currentPage, onNavigate, pageData }) {
     case "orders": 
       return ProtectedRoute(OrdersList);
     case "orderstatus": 
-      return ProtectedRoute(OrderStatus);
+      return ProtectedRoute(OrderStatus, { order: pageData });
     
     // --- Fallback ---
     default: 

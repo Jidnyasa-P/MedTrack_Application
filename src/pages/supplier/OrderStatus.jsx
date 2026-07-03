@@ -1,5 +1,5 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getOrderById } from "../../services/OrderService";
 
 const Icons = {
   home: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
@@ -13,11 +13,35 @@ const Icons = {
   chevronDown: "M19 9l-7 7-7-7"
 };
 
-export default function OrderStatus() {
+export default function OrderStatus({ order, onNavigate }) {
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState("timeline");
-  const orderDate = new Date("2024-04-08");
-  const progress = 3;
+  const [orderState, setOrderState] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [notFoundError, setNotFoundError] = useState(null);
+
+  useEffect(() => {
+    const fetchOrderDetail = async () => {
+      const orderId = order && typeof order === 'object' ? order.id : order;
+      if (!orderId) {
+        setLoading(false);
+        return;
+      }
+      try {
+        setLoading(true);
+        setNotFoundError(null);
+        const data = await getOrderById(orderId);
+        setOrderState(data);
+      } catch (err) {
+        console.error("Error fetching order details:", err);
+        const errorMsg = err.response?.data?.message || `Order not found with id: ${orderId}`;
+        setNotFoundError(errorMsg);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchOrderDetail();
+  }, [order]);
 
   const addDays = (date, days) => {
     const d = new Date(date);
@@ -25,23 +49,104 @@ export default function OrderStatus() {
     return d.toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
   };
 
+  const getProgressForStatus = (status) => {
+    switch (status?.toUpperCase()) {
+      case "PENDING": return 0;
+      case "CONFIRMED": return 1;
+      case "DISPATCHED": return 2;
+      case "IN_TRANSIT": return 3;
+      case "DELIVERED": return 4;
+      default: return 0;
+    }
+  };
+
+  const orderDate = orderState?.orderDate ? new Date(orderState.orderDate) : new Date("2024-04-08");
+  const progress = orderState ? getProgressForStatus(orderState.status) : 3;
+
   const steps = [
-    { label: "Order Placed", date: addDays(orderDate, 0) }, { label: "Confirmed", date: addDays(orderDate, 1) },
-    { label: "Dispatched", date: addDays(orderDate, 2) }, { label: "In Transit", date: addDays(orderDate, 3) },
+    { label: "Order Placed", date: addDays(orderDate, 0) },
+    { label: "Confirmed", date: addDays(orderDate, 1) },
+    { label: "Dispatched", date: addDays(orderDate, 2) },
+    { label: "In Transit", date: addDays(orderDate, 3) },
     { label: "Delivered", date: `Expected ${addDays(orderDate, 5)}` },
   ];
 
-  const items = [
-    { item: "Ventilator Parts", qty: 3, price: 45000, status: "Shipped", progress: 80, deliveryDate: addDays(orderDate, 5) },
-    { item: "MRI Coil Assembly", qty: 1, price: 120000, status: "Processing", progress: 40, deliveryDate: addDays(orderDate, 7) },
-    { item: "Infusion Pump Kits", qty: 10, price: 85000, status: "Shipped", progress: 90, deliveryDate: addDays(orderDate, 5) },
-    { item: "Defibrillator Battery Pack", qty: 1, price: 18000, status: "Shipped", progress: 60, deliveryDate: addDays(orderDate, 6) },
-    { item: "X-Ray Tubes", qty: 2, price: 65000, status: "Processing", progress: 20, deliveryDate: addDays(orderDate, 8) },
-  ];
+  const items = orderState
+    ? [
+        {
+          item: orderState.equipmentName || "Medical Equipment",
+          qty: orderState.quantity || 1,
+          price: 45000 * (orderState.quantity || 1), // Mock price based on quantity
+          status: orderState.status === "DELIVERED" ? "Shipped" : "Processing",
+          progress: progress * 25,
+          deliveryDate: addDays(orderDate, 5),
+        },
+      ]
+    : [];
 
   const total = items.reduce((sum, i) => sum + i.price, 0);
   const percent = ((progress + 1) / steps.length) * 100;
-  const statusStyles = { Shipped: { bg: "bg-green-100", text: "text-green-700", icon: Icons.check }, Processing: { bg: "bg-yellow-100", text: "text-yellow-700", icon: Icons.spinner } };
+  const statusStyles = {
+    Shipped: { bg: "bg-green-100", text: "text-green-700", icon: Icons.check },
+    Processing: { bg: "bg-yellow-100", text: "text-yellow-700", icon: Icons.spinner },
+  };
+
+  if (loading) {
+    return (
+      <div className="p-8 text-center bg-slate-50 min-h-screen flex flex-col justify-center items-center font-sans">
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600"></div>
+        <p className="mt-4 text-slate-500 font-medium tracking-wide">Retrieving order details from server...</p>
+      </div>
+    );
+  }
+
+  if (notFoundError || !orderState) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 flex items-center justify-center p-6 text-center font-sans">
+        <div className="bg-white border border-sky-100 p-8 rounded-3xl max-w-md w-full shadow-2xl">
+          <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 mb-2">Order Not Found</h2>
+          <p className="text-slate-500 mb-6 font-medium">
+            {notFoundError || "Please track an order from the Orders list or enter a valid Order ID below."}
+          </p>
+          <div className="flex gap-2 mb-6">
+            <input
+              type="text"
+              placeholder="Enter Order ID (e.g. 1)"
+              id="searchOrderIdInput"
+              className="flex-1 p-4 bg-slate-50 border border-sky-100 rounded-2xl text-slate-900 font-bold focus:ring-2 focus:ring-sky-500/20 placeholder:text-slate-400 outline-none"
+              onKeyPress={async (e) => {
+                if (e.key === "Enter") {
+                  const val = e.target.value.trim();
+                  if (val) {
+                    onNavigate("orderstatus", val);
+                  }
+                }
+              }}
+            />
+            <button
+              onClick={() => {
+                const val = document.getElementById("searchOrderIdInput")?.value.trim();
+                if (val) {
+                  onNavigate("orderstatus", val);
+                }
+              }}
+              className="px-6 bg-sky-600 text-white rounded-2xl font-bold hover:bg-sky-700 transition-all active:scale-95 shadow-lg shadow-sky-200"
+            >
+              Track
+            </button>
+          </div>
+          <button onClick={() => onNavigate("orders")} className="w-full py-4 bg-slate-100 text-slate-700 font-black rounded-2xl hover:bg-slate-200 transition-all active:scale-95">
+            Return to Orders
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-sky-100 font-sans text-gray-800">
@@ -64,9 +169,9 @@ export default function OrderStatus() {
         <nav className="flex items-center gap-2 text-sm text-gray-400 mb-8">
           <span className="hover:text-sky-600 cursor-pointer flex items-center gap-1"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d={Icons.home} /></svg>Home</span>
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d={Icons.chevronRight} /></svg>
-          <span className="hover:text-sky-600 cursor-pointer">Orders</span>
+          <span onClick={() => onNavigate("orders")} className="hover:text-sky-600 cursor-pointer">Orders</span>
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d={Icons.chevronRight} /></svg>
-          <span className="text-gray-700 font-semibold">Order #5502</span>
+          <span className="text-gray-700 font-semibold">{orderState.orderCode || `Order #${orderState.id}`}</span>
         </nav>
 
         {/* Status Banner */}
@@ -76,7 +181,7 @@ export default function OrderStatus() {
           <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
             <div>
               <span className="bg-white/20 backdrop-blur-sm text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">Express Shipping</span>
-              <h1 className="text-4xl font-extrabold tracking-tight mt-2 mb-2">Order #5502</h1>
+              <h1 className="text-4xl font-extrabold tracking-tight mt-2 mb-2">{orderState.orderCode || `Order #${orderState.id}`}</h1>
               <p className="text-sky-200 flex items-center gap-2"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d={Icons.calendar} /></svg>Placed on {addDays(orderDate, 0)}</p>
             </div>
             <div className="w-full md:w-auto bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20">
@@ -122,7 +227,7 @@ export default function OrderStatus() {
                             <div className="flex items-center gap-3"><p className={`font-bold text-lg ${done || active ? "text-gray-900" : "text-gray-500"}`}>{step.label}</p>{active && <span className="text-xs bg-sky-600 text-white px-3 py-1 rounded-full font-bold animate-pulse">Active</span>}</div>
                             <p className="text-sm text-gray-500 font-medium bg-white px-3 py-1 rounded-lg shadow-sm">{step.date}</p>
                           </div>
-                          {active && <div className="mt-3 flex items-center gap-2 text-sky-700 text-sm"><svg className="w-5 h-5 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d={Icons.location} /></svg>Your package is currently at the distribution center</div>}
+                          {active && <div className="mt-3 flex items-center gap-2 text-sky-700 text-sm"><svg className="w-5 h-5 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d={Icons.location} /></svg>{orderState.supplierNotes || `Order is in ${orderState.status} stage.`}</div>}
                         </div>
                       </div>
                     );

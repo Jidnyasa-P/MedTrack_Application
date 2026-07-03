@@ -3,7 +3,7 @@ import { getAllOrders, updateOrderStatus } from "../../services/OrderService";
 
 const STATUS_OPTIONS = ["Processing", "Shipped", "Delivered", "Cancelled"];
 
-export default function OrdersList() {
+export default function OrdersList({ onNavigate }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -151,6 +151,12 @@ export default function OrdersList() {
                   </div>
 
                   <div className="flex justify-end gap-3">
+                    <button 
+                      onClick={() => onNavigate('orderstatus', order)}
+                      className="px-6 py-2.5 rounded-xl bg-primary text-white font-bold text-sm hover:bg-primary/90 transition-all active:scale-95 shadow-lg shadow-primary/20"
+                    >
+                      Track Order
+                    </button>
                     <button className="px-6 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all active:scale-95">
                       Invoice
                     </button>

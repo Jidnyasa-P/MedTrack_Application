@@ -1,13 +1,16 @@
 import { useState, useEffect } from "react";
-import { updateTask } from "../../services/MaintenanceService";
+import { updateTask, getTaskById } from "../../services/MaintenanceService";
 
 export default function UpdateTask({ onNavigate, task }) {
-  // If task is not provided, we might be in a broken state, but let's handle it
+  const [taskState, setTaskState] = useState(null);
+  const [loadingTask, setLoadingTask] = useState(true);
+  const [notFoundError, setNotFoundError] = useState(null);
+
   const [form, setForm] = useState({
-    status: task?.status || "In Progress",
-    notes: task?.notes || "",
-    parts: task?.partsUsed ? task.partsUsed.split(", ") : [],
-    hours: task?.hoursWorked || "",
+    status: "In Progress",
+    notes: "",
+    parts: [],
+    hours: "",
     image: null
   });
   const [part, setPart] = useState("");
@@ -16,13 +19,89 @@ export default function UpdateTask({ onNavigate, task }) {
   const [done, setDone] = useState(false);
   const [error, setError] = useState(null);
 
-  if (!task) {
+  useEffect(() => {
+    const fetchTaskDetail = async () => {
+      const taskId = task && typeof task === "object" ? task.id : task;
+      if (!taskId) {
+        setLoadingTask(false);
+        return;
+      }
+      try {
+        setLoadingTask(true);
+        setNotFoundError(null);
+        const data = await getTaskById(taskId);
+        setTaskState(data);
+        setForm({
+          status: data.status || "In Progress",
+          notes: data.notes || "",
+          parts: data.partsUsed ? data.partsUsed.split(", ") : [],
+          hours: data.hoursWorked || "",
+          image: null
+        });
+      } catch (err) {
+        console.error("Error fetching task details:", err);
+        const errorMsg = err.response?.data?.message || `Maintenance task not found with id: ${taskId}`;
+        setNotFoundError(errorMsg);
+      } finally {
+        setLoadingTask(false);
+      }
+    };
+    fetchTaskDetail();
+  }, [task]);
+
+  if (loadingTask) {
     return (
-      <div className="p-8 text-center bg-slate-900 min-h-screen">
-        <p className="text-white mb-4">No task selected for update.</p>
-        <button onClick={() => onNavigate("tasks")} className="bg-primary text-white px-6 py-2 rounded-lg">
-          Back to Tasks
-        </button>
+      <div className="p-8 text-center bg-slate-900 min-h-screen flex flex-col justify-center items-center font-sans">
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <p className="mt-4 text-slate-400 font-medium tracking-wide">Retrieving task details from server...</p>
+      </div>
+    );
+  }
+
+  if (notFoundError || !taskState) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-center font-sans">
+        <div className="bg-slate-800/85 border border-red-500/20 backdrop-blur-xl p-8 rounded-3xl max-w-md w-full shadow-2xl">
+          <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-black text-white mb-2">Task Not Found</h2>
+          <p className="text-slate-400 mb-6 font-medium">
+            {notFoundError || "Please select a task from the list or enter a valid task ID below."}
+          </p>
+          <div className="flex gap-2 mb-6">
+            <input
+              type="text"
+              placeholder="Enter Task ID (e.g. 1)"
+              id="searchTaskIdInput"
+              className="flex-1 p-4 bg-slate-700/50 border border-slate-600 rounded-2xl text-white font-bold focus:ring-2 focus:ring-primary/20 placeholder:text-slate-400 outline-none"
+              onKeyPress={async (e) => {
+                if (e.key === "Enter") {
+                  const val = e.target.value.trim();
+                  if (val) {
+                    onNavigate("update-task", val);
+                  }
+                }
+              }}
+            />
+            <button
+              onClick={() => {
+                const val = document.getElementById("searchTaskIdInput")?.value.trim();
+                if (val) {
+                  onNavigate("update-task", val);
+                }
+              }}
+              className="px-6 bg-primary text-white rounded-2xl font-bold hover:bg-primary/90 transition-all active:scale-95 shadow-lg shadow-primary/20"
+            >
+              Load
+            </button>
+          </div>
+          <button onClick={() => onNavigate("tasks")} className="w-full py-4 bg-slate-700 text-white font-black rounded-2xl hover:bg-slate-600 transition-all active:scale-95">
+            Return to Tasks
+          </button>
+        </div>
       </div>
     );
   }
@@ -70,7 +149,7 @@ export default function UpdateTask({ onNavigate, task }) {
         hoursWorked: form.hours
       };
 
-      await updateTask(task.id, payload);
+      await updateTask(taskState.id, payload);
       setDone(true);
       setTimeout(() => onNavigate("tasks"), 2000);
     } catch (err) {
@@ -241,25 +320,25 @@ export default function UpdateTask({ onNavigate, task }) {
                <div className="space-y-6 relative z-10">
                  <div>
                    <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Target Asset</span>
-                   <p className="font-bold text-lg">{task.equipment}</p>
+                   <p className="font-bold text-lg">{taskState.equipment}</p>
                  </div>
                  <div>
                    <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Facility</span>
-                   <p className="font-bold text-slate-300">{task.hospital}</p>
+                   <p className="font-bold text-slate-300">{taskState.hospital}</p>
                  </div>
                  <div>
                    <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Criticality</span>
                    <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase mt-1 ${
-                     task.priority === 'Critical' ? 'bg-red-500/20 text-red-300' :
-                     task.priority === 'High' ? 'bg-orange-500/20 text-orange-300' :
+                     taskState.priority === 'Critical' ? 'bg-red-500/20 text-red-300' :
+                     taskState.priority === 'High' ? 'bg-orange-500/20 text-orange-300' :
                      'bg-blue-500/20 text-blue-300'
                    }`}>
-                     {task.priority}
+                     {taskState.priority}
                    </span>
                  </div>
                  <div>
                    <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Original Issue</span>
-                   <p className="text-sm text-slate-400 italic font-medium leading-relaxed">"{task.description}"</p>
+                   <p className="text-sm text-slate-400 italic font-medium leading-relaxed">"{taskState.description}"</p>
                  </div>
                </div>
             </div>
