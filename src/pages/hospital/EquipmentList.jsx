@@ -182,13 +182,17 @@ const styles = {
   },
 };
 
-import { getAllEquipment, deleteEquipment } from "../../services/EquipmentService";
+import { getAllEquipment, deleteEquipment, getEquipmentById } from "../../services/EquipmentService";
 
 export default function EquipmentList({ onNavigate }) {
   const [equipment, setEquipment] = useState([]);
   const [search, setSearch] = useState("");
   const [hoveredCard, setHoveredCard] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [selectedEquipmentId, setSelectedEquipmentId] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [equipmentDetails, setEquipmentDetails] = useState(null);
+  const [detailsError, setDetailsError] = useState(null);
 
   useEffect(() => {
     fetchEquipment();
@@ -203,6 +207,23 @@ export default function EquipmentList({ onNavigate }) {
       console.error("Failed to fetch equipment", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleViewDetails = async (id) => {
+    setSelectedEquipmentId(id);
+    setDetailsLoading(true);
+    setDetailsError(null);
+    setEquipmentDetails(null);
+    try {
+      const data = await getEquipmentById(id);
+      setEquipmentDetails(data);
+    } catch (error) {
+      console.error("Error fetching equipment details:", error);
+      const errMsg = error.response?.data?.message || `Equipment not found with id: ${id}`;
+      setDetailsError(errMsg);
+    } finally {
+      setDetailsLoading(false);
     }
   };
 
@@ -310,6 +331,13 @@ export default function EquipmentList({ onNavigate }) {
 
               <div style={styles.cardFooter}>
                 <button
+                  onClick={() => handleViewDetails(item.id)}
+                  style={{ ...styles.primaryBtn, backgroundColor: "#e0f2fe", borderColor: "#bae6fd", color: "#0369a1" }}
+                >
+                  Details
+                </button>
+
+                <button
                   onClick={() => onNavigate("schedule-maintenance")}
                   style={styles.primaryBtn}
                 >
@@ -330,6 +358,173 @@ export default function EquipmentList({ onNavigate }) {
           </div>
         ))}
       </div>
+
+      {/* Equipment Details Modal */}
+      {selectedEquipmentId && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(15, 23, 42, 0.6)",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 1000,
+          backdropFilter: "blur(8px)"
+        }}>
+          <div style={{
+            backgroundColor: "white",
+            borderRadius: "24px",
+            padding: "32px",
+            maxWidth: "500px",
+            width: "90%",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+            position: "relative",
+            border: "1px solid #f1f5f9",
+            fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
+          }}>
+            <button 
+              onClick={() => setSelectedEquipmentId(null)}
+              style={{
+                position: "absolute",
+                top: "20px",
+                right: "20px",
+                background: "#f1f5f9",
+                border: "none",
+                fontSize: "20px",
+                width: "36px",
+                height: "36px",
+                borderRadius: "50%",
+                cursor: "pointer",
+                color: "#64748b",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: "bold",
+                transition: "background 0.2s"
+              }}
+              onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#e2e8f0"}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = "#f1f5f9"}
+            >
+              &times;
+            </button>
+
+            {detailsLoading && (
+              <div style={{ textAlign: "center", padding: "40px 20px" }}>
+                <div style={{
+                  display: "inline-block",
+                  width: "40px",
+                  height: "40px",
+                  border: "4px solid #f3f3f3",
+                  borderTop: "4px solid #0056b3",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite"
+                }}></div>
+                <p style={{ marginTop: "16px", color: "#64748b", fontWeight: "600" }}>Fetching equipment details...</p>
+                <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+              </div>
+            )}
+
+            {detailsError && (
+              <div style={{ textAlign: "center", padding: "20px" }}>
+                <div style={{ color: "#ef4444", fontSize: "48px", marginBottom: "16px" }}>⚠️</div>
+                <h3 style={{ fontSize: "20px", fontWeight: "bold", color: "#0f172a", marginBottom: "8px" }}>Not Found</h3>
+                <p style={{ color: "#ef4444", fontSize: "14px", marginBottom: "24px", fontWeight: "500" }}>{detailsError}</p>
+                <button 
+                  onClick={() => setSelectedEquipmentId(null)}
+                  style={{
+                    backgroundColor: "#ef4444",
+                    color: "white",
+                    border: "none",
+                    padding: "12px 24px",
+                    borderRadius: "12px",
+                    fontWeight: "bold",
+                    cursor: "pointer",
+                    boxShadow: "0 4px 6px rgba(239, 68, 68, 0.2)"
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            )}
+
+            {equipmentDetails && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "24px" }}>
+                  <div style={{
+                    width: "56px",
+                    height: "56px",
+                    borderRadius: "16px",
+                    backgroundColor: "#eff6ff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "24px"
+                  }}>⚙️</div>
+                  <div>
+                    <h2 style={{ fontSize: "22px", fontWeight: "800", color: "#0f172a", margin: 0 }}>
+                      {equipmentDetails.name}
+                    </h2>
+                    <span style={{
+                      backgroundColor: equipmentDetails.status === "Operational" ? "#e2fbf0" : "#fff3e6",
+                      color: equipmentDetails.status === "Operational" ? "#10b981" : "#d97706",
+                      padding: "4px 12px",
+                      borderRadius: "9999px",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      display: "inline-block",
+                      marginTop: "6px",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em"
+                    }}>{equipmentDetails.status}</span>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px", backgroundColor: "#f8fafc", padding: "20px", borderRadius: "16px", marginBottom: "24px" }}>
+                  <div>
+                    <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.05em" }}>Equipment ID</span>
+                    <p style={{ fontSize: "15px", color: "#0f172a", fontWeight: "700", margin: "4px 0 0 0", fontFamily: "monospace" }}>{equipmentDetails.id}</p>
+                  </div>
+                  <div style={{ width: "100%", height: "1px", backgroundColor: "#e2e8f0" }}></div>
+                  <div>
+                    <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.05em" }}>Model Details</span>
+                    <p style={{ fontSize: "15px", color: "#334155", fontWeight: "600", margin: "4px 0 0 0" }}>{equipmentDetails.model || "N/A"}</p>
+                  </div>
+                  <div style={{ width: "100%", height: "1px", backgroundColor: "#e2e8f0" }}></div>
+                  <div>
+                    <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.05em" }}>Department / Location</span>
+                    <p style={{ fontSize: "15px", color: "#334155", fontWeight: "600", margin: "4px 0 0 0" }}>{equipmentDetails.department || "N/A"}</p>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button 
+                    onClick={() => setSelectedEquipmentId(null)}
+                    style={{
+                      backgroundColor: "#0056b3",
+                      color: "white",
+                      border: "none",
+                      padding: "12px 28px",
+                      borderRadius: "12px",
+                      cursor: "pointer",
+                      fontWeight: "700",
+                      fontSize: "15px",
+                      boxShadow: "0 4px 6px rgba(0, 86, 179, 0.2)",
+                      transition: "background 0.2s"
+                    }}
+                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#004494"}
+                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = "#0056b3"}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
