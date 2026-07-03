@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { getAllOrders, updateOrderStatus } from "../../services/OrderService";
+import { useAuth } from "../../context/AuthContext";
 
 const STATUS_OPTIONS = ["Processing", "Shipped", "Delivered", "Cancelled"];
 
-export default function OrdersList() {
+export default function OrdersList({ onNavigate }) {
+  const { user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -113,21 +115,34 @@ export default function OrdersList() {
                     
                     <div className="flex flex-col items-start sm:items-end">
                       <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Status</span>
-                      <select 
-                        value={order.shippingStatus}
-                        onChange={(e) => handleStatusUpdate(order.id, e.target.value)}
-                        disabled={updatingId === order.id}
-                        className={`px-4 py-2 rounded-xl text-sm font-bold border-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer ${
-                          order.shippingStatus === 'Delivered' ? 'bg-emerald-50 text-emerald-600' :
-                          order.shippingStatus === 'Shipped' ? 'bg-blue-50 text-blue-600' :
-                          order.shippingStatus === 'Cancelled' ? 'bg-red-50 text-red-600' :
-                          'bg-orange-50 text-orange-600'
-                        } ${updatingId === order.id ? 'opacity-50 cursor-wait' : ''}`}
-                      >
-                        {STATUS_OPTIONS.map(opt => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
+                      {user?.role === "supplier" ? (
+                        <select 
+                          value={order.shippingStatus}
+                          onChange={(e) => handleStatusUpdate(order.id, e.target.value)}
+                          disabled={updatingId === order.id}
+                          className={`px-4 py-2 rounded-xl text-sm font-bold border-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer ${
+                            order.shippingStatus === 'Delivered' ? 'bg-emerald-50 text-emerald-600' :
+                            order.shippingStatus === 'Shipped' ? 'bg-blue-50 text-blue-600' :
+                            order.shippingStatus === 'Cancelled' ? 'bg-red-50 text-red-600' :
+                            'bg-orange-50 text-orange-600'
+                          } ${updatingId === order.id ? 'opacity-50 cursor-wait' : ''}`}
+                        >
+                          {STATUS_OPTIONS.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div 
+                          className={`px-4 py-2 rounded-xl text-sm font-bold ${
+                            order.shippingStatus === 'Delivered' ? 'bg-emerald-50 text-emerald-600' :
+                            order.shippingStatus === 'Shipped' ? 'bg-blue-50 text-blue-600' :
+                            order.shippingStatus === 'Cancelled' ? 'bg-red-50 text-red-600' :
+                            'bg-orange-50 text-orange-600'
+                          }`}
+                        >
+                          {order.shippingStatus || "Processing"}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -151,6 +166,12 @@ export default function OrdersList() {
                   </div>
 
                   <div className="flex justify-end gap-3">
+                    <button 
+                      onClick={() => onNavigate("orderstatus", order)}
+                      className="px-6 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition-all active:scale-95 shadow-md shadow-blue-200"
+                    >
+                      Track Order
+                    </button>
                     <button className="px-6 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all active:scale-95">
                       Invoice
                     </button>

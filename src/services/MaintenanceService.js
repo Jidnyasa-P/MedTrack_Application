@@ -15,3 +15,8 @@ export const updateTask = async (id, data) => {
   const response = await API.put(`/api/maintenance/${id}`, data);
   return response.data;
 };
+
+export const getTaskById = async (id) => {
+  const response = await API.get(`/api/maintenance/${id}`);
+  return response.data;
+};

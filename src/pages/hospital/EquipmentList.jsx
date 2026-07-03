@@ -180,15 +180,74 @@ const styles = {
     backgroundColor: "#fff5e6",
     color: "#e67e22",
   },
+  detailsBtn: {
+    padding: "10px 15px",
+    backgroundColor: "#f5f6f8",
+    color: "#4a5568",
+    border: "1px solid #e2e8f0",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontWeight: "600",
+    fontSize: "14px",
+    transition: "background 0.2s",
+  },
+  modalOverlay: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1000,
+  },
+  modalContent: {
+    backgroundColor: "white",
+    borderRadius: "16px",
+    padding: "30px",
+    maxWidth: "500px",
+    width: "90%",
+    boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+    border: "1px solid #e2e8f0",
+  },
+  modalHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "20px",
+  },
+  modalTitle: {
+    fontSize: "20px",
+    fontWeight: "700",
+    color: "#1a202c",
+    margin: 0,
+  },
+  modalCloseBtn: {
+    background: "none",
+    border: "none",
+    fontSize: "24px",
+    cursor: "pointer",
+    color: "#a0aec0",
+    padding: 0,
+  },
 };
 
-import { getAllEquipment, deleteEquipment } from "../../services/EquipmentService";
+import { getAllEquipment, deleteEquipment, getEquipmentById } from "../../services/EquipmentService";
+import { useAuth } from "../../context/AuthContext";
 
 export default function EquipmentList({ onNavigate }) {
+  const { user } = useAuth();
   const [equipment, setEquipment] = useState([]);
   const [search, setSearch] = useState("");
   const [hoveredCard, setHoveredCard] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  const [selectedEqId, setSelectedEqId] = useState(null);
+  const [selectedEq, setSelectedEq] = useState(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState(null);
 
   useEffect(() => {
     fetchEquipment();
@@ -214,6 +273,26 @@ export default function EquipmentList({ onNavigate }) {
       } catch (error) {
         alert("Failed to delete equipment. It might be linked to maintenance tasks.");
       }
+    }
+  };
+
+  const handleViewDetails = async (id) => {
+    setSelectedEqId(id);
+    setSelectedEq(null);
+    setDetailsError(null);
+    setLoadingDetails(true);
+    try {
+      const data = await getEquipmentById(id);
+      setSelectedEq(data);
+    } catch (err) {
+      console.error("Error loading equipment details:", err);
+      if (err.response && err.response.data && err.response.data.message) {
+        setDetailsError(err.response.data.message);
+      } else {
+        setDetailsError(`Equipment details not found with id: ${id}`);
+      }
+    } finally {
+      setLoadingDetails(false);
     }
   };
 
@@ -256,14 +335,16 @@ export default function EquipmentList({ onNavigate }) {
             onFocus={(e) => e.target.style.border = "1px solid #0056b3"}
             onBlur={(e) => e.target.style.border = "1px solid #e0e0e0"}
           />
-          <button
-            style={styles.addButton}
-            onClick={() => onNavigate("add-equipment")}
-            onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#004494"}
-            onMouseOut={(e) => e.currentTarget.style.backgroundColor = "#0056b3"}
-          >
-            + Add Equipment
-          </button>
+          {user?.role === "hospital" && (
+            <button
+              style={styles.addButton}
+              onClick={() => onNavigate("add-equipment")}
+              onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#004494"}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = "#0056b3"}
+            >
+              + Add Equipment
+            </button>
+          )}
         </div>
       </div>
 
@@ -310,14 +391,23 @@ export default function EquipmentList({ onNavigate }) {
 
               <div style={styles.cardFooter}>
                 <button
-                  onClick={() => onNavigate("schedule-maintenance")}
-                  style={styles.primaryBtn}
+                  onClick={() => handleViewDetails(item.id)}
+                  style={styles.detailsBtn}
                 >
-                  Schedule Service
+                  Details
                 </button>
 
+                {user?.role === "hospital" && (
+                  <button
+                    onClick={() => onNavigate("schedule-maintenance")}
+                    style={styles.primaryBtn}
+                  >
+                    Schedule Service
+                  </button>
+                )}
+
                 {/* Hide delete button for default items */}
-                {!(String(item.id).startsWith("EQ-00")) && (
+                {user?.role === "hospital" && !(String(item.id).startsWith("EQ-00")) && (
                   <button
                     onClick={() => handleDelete(item.id)}
                     style={styles.deleteBtn}
@@ -330,6 +420,71 @@ export default function EquipmentList({ onNavigate }) {
           </div>
         ))}
       </div>
+
+      {/* Details Modal */}
+      {selectedEqId && (
+        <div style={styles.modalOverlay} onClick={() => setSelectedEqId(null)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>Specification Details</h2>
+              <button style={styles.modalCloseBtn} onClick={() => setSelectedEqId(null)}>×</button>
+            </div>
+            
+            {loadingDetails && (
+              <div style={{ textAlign: "center", padding: "40px 0" }}>
+                <div style={{ display: "inline-block", width: "30px", height: "30px", border: "3px solid #e2e8f0", borderTop: "3px solid #3182ce", borderRadius: "50%", animation: "spin 1s linear infinite" }}></div>
+                <p style={{ marginTop: "15px", color: "#718096", fontWeight: "600" }}>Loading specifications...</p>
+              </div>
+            )}
+
+            {detailsError && !loadingDetails && (
+              <div style={{ textAlign: "center", padding: "20px 0" }}>
+                <div style={{ fontSize: "40px", marginBottom: "15px" }}>⚠️</div>
+                <p style={{ color: "#e53e3e", fontWeight: "700", marginBottom: "10px" }}>Equipment Not Found</p>
+                <p style={{ color: "#718096", fontSize: "14px" }}>{detailsError}</p>
+              </div>
+            )}
+
+            {selectedEq && !loadingDetails && (
+              <div>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "20px" }}>
+                  <img 
+                    src={getImage(selectedEq.name)} 
+                    alt={selectedEq.name} 
+                    style={{ width: "100%", height: "200px", objectFit: "cover", borderRadius: "12px", border: "1px solid #e2e8f0" }}
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <div style={{ borderBottom: "1px solid #edf2f7", paddingBottom: "8px" }}>
+                    <span style={{ fontSize: "12px", color: "#a0aec0", fontWeight: "700", textTransform: "uppercase" }}>Asset Name</span>
+                    <p style={{ fontSize: "18px", fontWeight: "700", color: "#2d3748", margin: "4px 0 0 0" }}>{selectedEq.name}</p>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "15px", borderBottom: "1px solid #edf2f7", paddingBottom: "8px" }}>
+                    <div>
+                      <span style={{ fontSize: "12px", color: "#a0aec0", fontWeight: "700" }}>Department</span>
+                      <p style={{ fontSize: "14px", fontWeight: "600", color: "#4a5568", margin: "2px 0 0 0" }}>{selectedEq.department || "N/A"}</p>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: "12px", color: "#a0aec0", fontWeight: "700" }}>Model / Serial</span>
+                      <p style={{ fontSize: "14px", fontWeight: "600", color: "#4a5568", margin: "2px 0 0 0" }}>{selectedEq.model || "N/A"}</p>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "15px" }}>
+                    <div>
+                      <span style={{ fontSize: "12px", color: "#a0aec0", fontWeight: "700" }}>System Code</span>
+                      <p style={{ fontSize: "13px", fontWeight: "600", color: "#4a5568", margin: "2px 0 0 0", fontFamily: "monospace" }}>{selectedEq.deviceCode || selectedEq.id}</p>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: "12px", color: "#a0aec0", fontWeight: "700" }}>Status</span>
+                      <div style={{ ...getStatusStyle(selectedEq.status), marginTop: "4px", marginBottom: 0 }}>{selectedEq.status}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
