@@ -9,15 +9,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class HospitalService {
 
     private final HospitalRepository hospitalRepository;
     private final UserRepository userRepository;
 
-    @Autowired
-    public HospitalService(HospitalRepository hospitalRepository, UserRepository userRepository) {
-        this.hospitalRepository = hospitalRepository;
-        this.userRepository = userRepository;
+
     }
 
     /**
