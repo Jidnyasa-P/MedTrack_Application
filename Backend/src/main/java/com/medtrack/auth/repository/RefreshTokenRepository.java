@@ -20,16 +20,17 @@ import java.util.Optional;
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long> {
 
     /**
-     * Finds a refresh token record matching the specified token value.
+     * Finds a refresh token record matching the specified token value string.
+     * This query is commonly used during token refresh and single-session logout workflows to fetch the token's metadata.
      *
      * @param token the UUID string of the token to find
-     * @return an {@link Optional} containing the matched {@link RefreshToken} if found, or {@link Optional#empty()}
+     * @return an {@link Optional} containing the matched {@link RefreshToken} if found, or {@link Optional#empty()} if no match exists
      */
     Optional<RefreshToken> findByToken(String token);
 
     /**
-     * Deletes all refresh tokens belonging to the specified user.
-     * This is typically used for "revoke all session" operations.
+     * Deletes all refresh tokens belonging to the specified user ID from database storage.
+     * This operation is typically executed during security events (e.g. password resets or "logout everywhere" options) to force session expiration.
      *
      * @param userId the ID of the user whose tokens should be deleted
      */
