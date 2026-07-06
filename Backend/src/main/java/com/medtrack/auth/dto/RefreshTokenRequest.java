@@ -23,7 +23,11 @@ import lombok.NoArgsConstructor;
 public class RefreshTokenRequest {
 
     /**
-     * The refresh token string (UUID).
+     * The database-backed UUID refresh token string.
+     * Enforces constraints:
+     * <ul>
+     *   <li>{@code @NotBlank}: Refresh token cannot be null, empty, or consist entirely of whitespace characters.</li>
+     * </ul>
      */
     @NotBlank(message = "Refresh token must not be blank")
     private String refreshToken;
