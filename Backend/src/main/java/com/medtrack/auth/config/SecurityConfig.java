@@ -1,6 +1,8 @@
 package com.medtrack.auth.config;
 
 import com.medtrack.auth.security.JwtAuthFilter;
+import com.medtrack.auth.security.CustomAuthenticationEntryPoint;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import com.medtrack.auth.repository.UserRepository;
 import com.medtrack.auth.model.AccountStatus;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -54,6 +56,7 @@ import java.util.List;
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -63,6 +66,7 @@ public class SecurityConfig {
      * authentication context in Spring's SecurityContextHolder.
      */
     private final JwtAuthFilter jwtAuthFilter;
+    private final CustomAuthenticationEntryPoint customAuthenticationEntryPoint;
 
     /**
      * Configures and registers a {@link PasswordEncoder} bean.
@@ -149,7 +153,8 @@ public class SecurityConfig {
                     "/api/auth/register",
                     "/api/auth/refresh-token",
                     "/api/auth/logout",
-                    "/h2-console/**"
+                    "/h2-console/**",
+                    "/error"
                 ).permitAll()
 
                 // Rule set for Equipment management:
@@ -188,6 +193,11 @@ public class SecurityConfig {
             // populated with authentication details before standard password/session authentication checks.
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
             
+            // 5b. Exception Handling for Unauthorized Requests
+            .exceptionHandling(exception -> exception
+                .authenticationEntryPoint(customAuthenticationEntryPoint)
+            )
+
             // 6. Disable X-Frame-Options headers
             // Disables frame options specifically to allow H2 Console to render inside an <iframe>.
             // Spring Security by default blocks frame rendering (DENY) to prevent clickjacking attacks.
