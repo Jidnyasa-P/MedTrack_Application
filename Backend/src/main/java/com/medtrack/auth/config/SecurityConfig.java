@@ -54,6 +54,7 @@ import java.util.List;
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -63,6 +64,7 @@ public class SecurityConfig {
      * authentication context in Spring's SecurityContextHolder.
      */
     private final JwtAuthFilter jwtAuthFilter;
+    private final CustomAuthenticationEntryPoint customAuthenticationEntryPoint;
 
     /**
      * Configures and registers a {@link PasswordEncoder} bean.
@@ -188,6 +190,11 @@ public class SecurityConfig {
             // populated with authentication details before standard password/session authentication checks.
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
             
+            // 5b. Exception Handling for Unauthorized Requests
+            .exceptionHandling(exception -> exception
+                .authenticationEntryPoint(customAuthenticationEntryPoint)
+            )
+
             // 6. Disable X-Frame-Options headers
             // Disables frame options specifically to allow H2 Console to render inside an <iframe>.
             // Spring Security by default blocks frame rendering (DENY) to prevent clickjacking attacks.
