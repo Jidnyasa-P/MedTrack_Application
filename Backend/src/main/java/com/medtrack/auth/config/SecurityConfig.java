@@ -105,10 +105,10 @@ public class SecurityConfig {
                 // - Authentication endpoints: login and registration
                 // - H2 database console: utilized during development for database visualization
                 .requestMatchers(
-                    "/api/user/login",
-                    "/api/user/register",
-                    "/api/user/refresh-token",
-                    "/api/user/logout",
+                    "/api/auth/login",
+                    "/api/auth/register",
+                    "/api/auth/refresh-token",
+                    "/api/auth/logout",
                     "/h2-console/**"
                 ).permitAll()
 
