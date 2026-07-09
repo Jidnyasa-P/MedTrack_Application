@@ -7,6 +7,7 @@ import com.medtrack.auth.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.medtrack.exception.ResourceNotFoundException;
 
 @Service
 @RequiredArgsConstructor
@@ -27,7 +28,7 @@ public class HospitalService {
     @Transactional
     public Hospital createHospitalProfile(Hospital hospital, String userEmail) {
         User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("User not found with email: " + userEmail));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + userEmail));
         
         // Ensure user is actually a hospital role
         if (!"hospital".equalsIgnoreCase(user.getRole())) {
@@ -50,6 +51,6 @@ public class HospitalService {
      */
     public Hospital getHospitalByUserId(Long userId) {
         return hospitalRepository.findByUserId(userId)
-                .orElseThrow(() -> new RuntimeException("Hospital profile not found for user ID: " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException("Hospital profile not found for user ID: " + userId));
     }
 }
