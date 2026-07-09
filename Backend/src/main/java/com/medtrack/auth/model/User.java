@@ -119,4 +119,16 @@ public class User {
     private int failedLoginAttempts = 0;
 
     private LocalDateTime accountLockedUntil;
+
+    /**
+     * Optional phone number for the user (e.g. "+1 (555) 019-2834").
+     */
+    @Column
+    private String phone;
+
+    /**
+     * Optional organization / clinic name the user belongs to (e.g. "St. Mary Clinic").
+     */
+    @Column
+    private String organization;
 }

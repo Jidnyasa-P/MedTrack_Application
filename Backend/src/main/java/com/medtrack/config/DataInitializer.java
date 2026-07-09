@@ -31,11 +31,13 @@ public class DataInitializer implements CommandLineRunner {
         // 1. Seed Users
         if (userRepository.count() == 0) {
             userRepository.save(User.builder()
-                .name("Admin User")
+                .name("Dr. Evelyn Carter")
                 .username("admin")
-                .email("hospital@medtrack.com")
+                .email("admin@medtrack.com")
                 .password(passwordEncoder.encode("admin123"))
-                .role("hospital")
+                .role("HOSPITAL")
+                .phone("+1 (555) 019-2834")
+                .organization("St. Mary Clinic")
                 .accountStatus(AccountStatus.ACTIVE)
                 .build());
 
@@ -44,7 +46,9 @@ public class DataInitializer implements CommandLineRunner {
                 .username("technician")
                 .email("tech@medtrack.com")
                 .password(passwordEncoder.encode("tech123"))
-                .role("Technician")
+                .role("TECHNICIAN")
+                .phone("+1 (555) 100-2001")
+                .organization("MedTech Services")
                 .accountStatus(AccountStatus.ACTIVE)
                 .build());
 
@@ -52,8 +56,10 @@ public class DataInitializer implements CommandLineRunner {
                 .name("Global Supplies")
                 .username("supplier")
                 .email("supplier@medtrack.com")
-                .password(passwordEncoder.encode("supply123"))
-                .role("Supplier")
+                .password(passwordEncoder.encode("supplier123"))
+                .role("SUPPLIER")
+                .phone("+1 (555) 200-3002")
+                .organization("GlobalMed Supply Co.")
                 .accountStatus(AccountStatus.ACTIVE)
                 .build());
         }
