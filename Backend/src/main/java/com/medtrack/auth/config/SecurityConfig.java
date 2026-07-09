@@ -1,6 +1,7 @@
 package com.medtrack.auth.config;
 
 import com.medtrack.auth.security.JwtAuthFilter;
+import com.medtrack.auth.security.RateLimitingFilter;
 import com.medtrack.auth.repository.UserRepository;
 import com.medtrack.auth.model.AccountStatus;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -20,9 +21,10 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import com.medtrack.auth.security.CustomAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.authentication.logout.LogoutFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -87,6 +89,7 @@ public class SecurityConfig {
      */
     private final JwtAuthFilter jwtAuthFilter;
     private final CustomAuthenticationEntryPoint customAuthenticationEntryPoint;
+    private final RateLimitingFilter rateLimitingFilter;
 
     /**
      * Configures and registers a {@link PasswordEncoder} bean.
@@ -147,59 +150,83 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // 1. Disable CSRF (Cross-Site Request Forgery)
-                .csrf(AbstractHttpConfigurer::disable)
+            // 1. Disable CSRF (Cross-Site Request Forgery)
+            // CSRF protection is generally required for cookie-based sessions. Since this application
+            // uses stateless JWTs passed via the Authorization header, the client is not susceptible
+            // to standard CSRF attacks, allowing us to safely disable this protection.
+            .csrf(AbstractHttpConfigurer::disable)
+            
+            // 2. Enable CORS (Cross-Origin Resource Sharing)
+            // Integrates the CORS configuration source bean (corsConfigurationSource) to define
+            // which client applications (origins) can make requests to our API.
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            
+            // 3. Set Session Management to STATELESS
+            // Ensures that Spring Security does not create or maintain any HTTP sessions (HttpSession).
+            // Every request must be independently authenticated via the JWT token.
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            
+            // 4. Configure URL Authorization Rules
+            // Defines access rules based on API paths, HTTP methods, and user roles.
+            .authorizeHttpRequests(auth -> auth
+                // Allow public access (no authentication required) to:
+                // - Authentication endpoints: login and registration
+                // - H2 database console: utilized during development for database visualization
+                .requestMatchers(
+                    "/api/auth/login",
+                    "/api/auth/register",
+                    "/api/auth/refresh-token",
+                    "/api/auth/logout",
+                    "/api/auth/forgot-password",
+                    "/api/auth/verify-otp",
+                    "/api/auth/reset-password",
+                    "/h2-console/**",
+                    "/error"
+                ).permitAll()
 
-                // 2. Enable CORS (Cross-Origin Resource Sharing)
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                // Rule set for Equipment management:
+                // - Read (GET): Any authenticated user can view equipment details.
+                // - Write/Modify (POST, PUT, DELETE): Restricted to users with the 'HOSPITAL' role.
+                .requestMatchers(HttpMethod.GET, "/api/equipment/**").authenticated()
+                .requestMatchers(HttpMethod.POST, "/api/equipment/**").hasRole("HOSPITAL")
+                .requestMatchers(HttpMethod.PUT, "/api/equipment/**").hasRole("HOSPITAL")
+                .requestMatchers(HttpMethod.DELETE, "/api/equipment/**").hasRole("HOSPITAL")
 
-                // 3. Set Session Management to STATELESS
-                .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // Rule set for Orders management:
+                // - Read (GET): Any authenticated user can view order details.
+                // - Creation/Removal (POST, DELETE): Restricted to users with the 'HOSPITAL' role.
+                // - Status Updates (PUT to /status endpoint): Restricted to suppliers ('SUPPLIER' role).
+                .requestMatchers(HttpMethod.GET, "/api/orders/**").authenticated()
+                .requestMatchers(HttpMethod.POST, "/api/orders/**").hasRole("HOSPITAL")
+                .requestMatchers(HttpMethod.PUT, "/api/orders/*/status").hasRole("SUPPLIER")
+                .requestMatchers(HttpMethod.DELETE, "/api/orders/**").hasRole("HOSPITAL")
 
-                // 4. Configure URL Authorization Rules
-                .authorizeHttpRequests(auth -> auth
-                        // Allow public access (no authentication required) to:
-                        .requestMatchers(
-                                "/api/auth/login",
-                                "/api/auth/register",
-                                "/api/auth/refresh-token",
-                                "/api/auth/logout",
-                                "/h2-console/**",
-                                "/actuator/**")
-                        .permitAll()
+                // Rule set for Maintenance schedules/tasks:
+                // - Read (GET): Any authenticated user can view maintenance tasks.
+                // - Creation/Removal (POST, DELETE): Restricted to users with the 'HOSPITAL' role.
+                // - Editing/Completion (PUT): Restricted to technicians ('TECHNICIAN' role).
+                .requestMatchers(HttpMethod.GET, "/api/maintenance/**").authenticated()
+                .requestMatchers(HttpMethod.POST, "/api/maintenance/**").hasRole("HOSPITAL")
+                .requestMatchers(HttpMethod.PUT, "/api/maintenance/**").hasRole("TECHNICIAN")
+                .requestMatchers(HttpMethod.DELETE, "/api/maintenance/**").hasRole("HOSPITAL")
 
-                        // Rule set for Equipment management:
-                        .requestMatchers(HttpMethod.GET, "/api/equipment/**").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/equipment/**").hasRole("HOSPITAL")
-                        .requestMatchers(HttpMethod.PUT, "/api/equipment/**").hasRole("HOSPITAL")
-                        .requestMatchers(HttpMethod.DELETE, "/api/equipment/**").hasRole("HOSPITAL")
+                // Fallback rule: Any request not matching the rules above must be fully authenticated.
+                .anyRequest().authenticated()
+            )
+            
+            .addFilterBefore(rateLimitingFilter, LogoutFilter.class)
+            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            
+            // 5b. Exception Handling for Unauthorized Requests
+            .exceptionHandling(exception -> exception
+                .authenticationEntryPoint(customAuthenticationEntryPoint)
+            )
 
-                        // Rule set for Orders management:
-                        .requestMatchers(HttpMethod.GET, "/api/orders/**").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/orders/**").hasRole("HOSPITAL")
-                        .requestMatchers(HttpMethod.PUT, "/api/orders/*/status").hasRole("SUPPLIER")
-                        .requestMatchers(HttpMethod.DELETE, "/api/orders/**").hasRole("HOSPITAL")
-
-                        // Rule set for Maintenance schedules/tasks:
-                        .requestMatchers(HttpMethod.GET, "/api/maintenance/**").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/maintenance/**").hasRole("HOSPITAL")
-                        .requestMatchers(HttpMethod.PUT, "/api/maintenance/**").hasRole("TECHNICIAN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/maintenance/**").hasRole("HOSPITAL")
-
-                        // Fallback rule: Any request not matching the rules above must be fully
-                        // authenticated.
-                        .anyRequest().authenticated())
-
-                // 5. Register Custom JWT Filter
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
-
-                // 5b. Exception Handling for Unauthorized Requests
-                .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(customAuthenticationEntryPoint))
-
-                // 6. Disable X-Frame-Options headers
-                .headers(headers -> headers.frameOptions(options -> options.disable()));
+            // 6. Disable X-Frame-Options headers
+            // Disables frame options specifically to allow H2 Console to render inside an <iframe>.
+            // Spring Security by default blocks frame rendering (DENY) to prevent clickjacking attacks.
+            .headers(headers -> headers.frameOptions(options -> options.disable()));
 
         return http.build();
     }

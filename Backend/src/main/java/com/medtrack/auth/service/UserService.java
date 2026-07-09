@@ -18,8 +18,14 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.LockedException;
 import java.time.LocalDateTime;
-
+import java.security.SecureRandom;
 import java.util.List;
+
+import com.medtrack.auth.dto.ForgotPasswordRequest;
+import com.medtrack.auth.dto.VerifyOtpRequest;
+import com.medtrack.auth.dto.ResetPasswordRequest;
+import com.medtrack.auth.model.PasswordResetToken;
+import com.medtrack.auth.repository.PasswordResetTokenRepository;
 
 /**
  * UserService encapsulates the business logic for user management, credential validation,
@@ -76,9 +82,17 @@ public class UserService {
      */
     private final RefreshTokenService refreshTokenService;
     private final AuthenticationManager authenticationManager;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final EmailService emailService;
 
     @Value("${security.account.lock-duration:30}")
     private int lockDurationMinutes;
+
+    @Value("${security.otp.length:6}")
+    private int otpLength;
+
+    @Value("${security.otp.expiry-minutes:10}")
+    private int otpExpiryMinutes;
 
     /**
      * Registers a new user account in the application database.
@@ -233,5 +247,112 @@ public class UserService {
     @Transactional
     public void logout(String refreshToken) {
         refreshTokenService.revokeToken(refreshToken);
+    }
+
+    /**
+     * Handles the forgot password workflow.
+     * Verifies that the user exists, generates a secure random OTP, saves it in the database,
+     * and sends it via the email service.
+     */
+    @Transactional
+    public void forgotPassword(ForgotPasswordRequest request) {
+        String email = request.getEmail();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found with email: " + email));
+
+        // Generate secure random numeric OTP
+        SecureRandom random = new SecureRandom();
+        StringBuilder otpBuilder = new StringBuilder();
+        for (int i = 0; i < otpLength; i++) {
+            otpBuilder.append(random.nextInt(10));
+        }
+        String otp = otpBuilder.toString();
+
+        // Calculate expiry time
+        LocalDateTime expiryTime = LocalDateTime.now().plusMinutes(otpExpiryMinutes);
+
+        // Store OTP
+        PasswordResetToken token = PasswordResetToken.builder()
+                .email(email)
+                .otp(otp)
+                .expiryTime(expiryTime)
+                .verified(false)
+                .used(false)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        passwordResetTokenRepository.save(token);
+
+        // Send OTP via EmailService
+        emailService.sendOtp(email, otp);
+    }
+
+    /**
+     * Validates the OTP for the given email address.
+     * Rejects expired, used, or incorrect OTPs and marks the OTP as verified.
+     */
+    @Transactional
+    public void verifyOtp(VerifyOtpRequest request) {
+        String email = request.getEmail();
+        String otp = request.getOtp();
+
+        // Find token by email and OTP
+        PasswordResetToken token = passwordResetTokenRepository.findByEmailAndOtp(email, otp)
+                .orElseThrow(() -> new RuntimeException("Incorrect OTP"));
+
+        // Reject if expired
+        if (token.getExpiryTime().isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("OTP has expired");
+        }
+
+        // Reject if used
+        if (token.isUsed()) {
+            throw new RuntimeException("OTP has already been used");
+        }
+
+        // Mark OTP as verified
+        token.setVerified(true);
+        passwordResetTokenRepository.save(token);
+    }
+
+    /**
+     * Resets the user's password using the verified OTP.
+     * Updates the password with BCrypt hashing and invalidates the OTP.
+     */
+    @Transactional
+    public void resetPassword(ResetPasswordRequest request) {
+        String email = request.getEmail();
+        String otp = request.getOtp();
+        String newPassword = request.getNewPassword();
+
+        // Verify OTP (find token by email and OTP)
+        PasswordResetToken token = passwordResetTokenRepository.findByEmailAndOtp(email, otp)
+                .orElseThrow(() -> new RuntimeException("Incorrect OTP"));
+
+        // Reject if not verified
+        if (!token.isVerified()) {
+            throw new RuntimeException("OTP has not been verified");
+        }
+
+        // Reject if expired
+        if (token.getExpiryTime().isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("OTP has expired");
+        }
+
+        // Reject if used
+        if (token.isUsed()) {
+            throw new RuntimeException("OTP has already been used");
+        }
+
+        // Get user and update password
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found with email: " + email));
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+
+        // Invalidate OTP (mark as used)
+        token.setUsed(true);
+        passwordResetTokenRepository.save(token);
     }
 }

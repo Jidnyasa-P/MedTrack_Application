@@ -102,10 +102,11 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Spring Boot Actuator -->
+        <!-- Bucket4j (Rate Limiting) -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-actuator</artifactId>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j_jdk17-core</artifactId>
+            <version>8.11.0</version>
         </dependency>
 
     </dependencies>
