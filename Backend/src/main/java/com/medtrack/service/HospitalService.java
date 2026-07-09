@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import com.medtrack.auth.model.User;
 import com.medtrack.repository.HospitalRepository;
 import com.medtrack.auth.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

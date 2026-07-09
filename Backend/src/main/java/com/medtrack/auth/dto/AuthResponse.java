@@ -38,6 +38,11 @@ public class AuthResponse {
     private String name;
 
     /**
+     * The unique username of the user.
+     */
+    private String username;
+
+    /**
      * The registered email address of the user, which also serves as their login identifier.
      */
     private String email;
@@ -59,4 +64,9 @@ public class AuthResponse {
      * Helpful for frontend applications to track session lifetime and automatically initiate logout.
      */
     private Long expiresIn;
+
+    /**
+     * The database-backed refresh token used to obtain a new access token.
+     */
+    private String refreshToken;
 }

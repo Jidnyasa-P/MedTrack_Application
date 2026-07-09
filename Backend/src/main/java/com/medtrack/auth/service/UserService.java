@@ -2,13 +2,22 @@ package com.medtrack.auth.service;
 
 import com.medtrack.auth.dto.AuthResponse;
 import com.medtrack.auth.dto.LoginRequest;
+import com.medtrack.auth.dto.RegisterRequest;
 import com.medtrack.auth.model.User;
+import com.medtrack.auth.model.AccountStatus;
 import com.medtrack.auth.repository.UserRepository;
 import com.medtrack.auth.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.LockedException;
+import java.time.LocalDateTime;
 
 import java.util.List;
 
@@ -43,9 +52,9 @@ public class UserService {
 
     /**
      * Token lifetime in milliseconds. This value must correspond directly with {@link JwtUtil#EXPIRATION_MS}
-     * to keep client-side session timeout synchronization accurate.
+     * to keep client-side session timeout synchronization synchronization accurate.
      */
-    private static final long TOKEN_EXPIRATION_MS = 1000 * 60 * 60 * 24;
+    private static final long TOKEN_EXPIRATION_MS = 1000 * 60 * 15;
 
     /**
      * Repository interface for performing CRUD operations on the User table.
@@ -63,29 +72,51 @@ public class UserService {
     private final JwtUtil jwtUtil;
 
     /**
+     * Service responsible for managing database-backed refresh tokens.
+     */
+    private final RefreshTokenService refreshTokenService;
+    private final AuthenticationManager authenticationManager;
+
+    @Value("${security.account.lock-duration:30}")
+    private int lockDurationMinutes;
+
+    /**
      * Registers a new user account in the application database.
      * Enforces unique email check and valid system role assignment, then encodes the password using BCrypt.
      *
-     * @param user the transient {@link User} entity containing details supplied during registration
+     * @param request the registration details DTO
      * @return the {@link AuthResponse} containing user profile information and generated JWT token
      * @throws RuntimeException if the email already exists in the database or if an invalid role is provided
      */
-    public AuthResponse register(User user) {
+    @Transactional
+    public AuthResponse register(RegisterRequest request) {
+        // Enforce username uniqueness constraint prior to registration
+        if (userRepository.existsByUsername(request.getUsername())) {
+            throw new RuntimeException("Username already exists");
+        }
+
         // Enforce email uniqueness constraint prior to registration
-        if (userRepository.existsByEmail(user.getEmail())) {
+        if (userRepository.existsByEmail(request.getEmail())) {
             throw new RuntimeException("Email already exists");
         }
 
+        // Normalize the role string casing to uppercase for consistency in authorization checks; defaults to HOSPITAL
+        String role = request.getRole() != null ? request.getRole().toUpperCase() : "HOSPITAL";
+
         // Validate that the assigned role is mapped to one of the authorized application roles
-        if (user.getRole() == null || !VALID_ROLES.contains(user.getRole().toUpperCase())) {
+        if (!VALID_ROLES.contains(role)) {
             throw new RuntimeException("Invalid role. Must be one of: HOSPITAL, TECHNICIAN, SUPPLIER");
         }
 
-        // Normalize the role string casing to uppercase for consistency in authorization checks
-        user.setRole(user.getRole().toUpperCase());
-
-        // Cryptographically hash the plain-text password using the configured password encoder
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
+        // Map the RegisterRequest DTO to the User database entity and encode raw password
+        User user = User.builder()
+                .name(request.getName())
+                .username(request.getUsername())
+                .email(request.getEmail())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .role(role)
+                .accountStatus(AccountStatus.ACTIVE)
+                .build();
         
         // Persist the user record to the database
         User savedUser = userRepository.save(user);
@@ -101,18 +132,53 @@ public class UserService {
      * @return the {@link AuthResponse} containing user profile information and generated JWT token
      * @throws BadCredentialsException if the email address does not exist or if the passwords do not match
      */
+    @Transactional(noRollbackFor = {BadCredentialsException.class, LockedException.class, UsernameNotFoundException.class})
     public AuthResponse login(LoginRequest loginRequest) {
-        // Retrieve user by email or throw a BadCredentialsException to protect system metadata details
         User user = userRepository.findByEmail(loginRequest.getEmail())
-                .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + loginRequest.getEmail()));
 
-        // Match the submitted password against the encrypted hash stored in database
-        if (!passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
-            throw new BadCredentialsException("Invalid email or password");
+        // Check if user account is locked
+        if (user.getAccountStatus() == AccountStatus.LOCKED || user.getAccountLockedUntil() != null) {
+            if (user.getAccountLockedUntil() != null && LocalDateTime.now().isAfter(user.getAccountLockedUntil())) {
+                // Lock expired - perform automatic unlock
+                user.setAccountStatus(AccountStatus.ACTIVE);
+                user.setAccountLockedUntil(null);
+                user.setFailedLoginAttempts(0);
+                user = userRepository.save(user);
+            } else {
+                throw new LockedException("Account is temporarily locked.");
+            }
         }
 
+        try {
+            // Authenticate credentials using Spring Security's AuthenticationManager
+            authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(loginRequest.getEmail(), loginRequest.getPassword())
+            );
+        } catch (BadCredentialsException e) {
+            // Only increment failed attempts if the account status is ACTIVE.
+            if (user.getAccountStatus() == AccountStatus.ACTIVE) {
+                int newAttempts = user.getFailedLoginAttempts() + 1;
+                if (newAttempts >= 5) {
+                    user.setAccountStatus(AccountStatus.LOCKED);
+                    user.setAccountLockedUntil(LocalDateTime.now().plusMinutes(lockDurationMinutes));
+                    user.setFailedLoginAttempts(0);
+                } else {
+                    user.setFailedLoginAttempts(newAttempts);
+                }
+                userRepository.save(user);
+            }
+            throw e;
+        }
+
+        // On successful login: reset failedLoginAttempts and clear lock values
+        user.setFailedLoginAttempts(0);
+        user.setAccountLockedUntil(null);
+        user.setAccountStatus(AccountStatus.ACTIVE);
+        User savedUser = userRepository.save(user);
+
         // Generate response payload containing user info and a new JWT token
-        return mapToAuthResponse(user);
+        return mapToAuthResponse(savedUser);
     }
 
     /**
@@ -125,15 +191,47 @@ public class UserService {
     private AuthResponse mapToAuthResponse(User user) {
         // Request a new JWT token signed with user's email and role claims
         String token = jwtUtil.generateToken(user.getEmail(), user.getRole());
+        String refreshToken = refreshTokenService.createRefreshToken(user.getId()).getToken();
 
         // Build and return the response DTO
         return AuthResponse.builder()
                 .id(user.getId())
                 .name(user.getName())
+                .username(user.getUsername())
                 .email(user.getEmail())
                 .role(user.getRole())
                 .token(token)
+                .refreshToken(refreshToken)
                 .expiresIn(TOKEN_EXPIRATION_MS)
                 .build();
+    }
+
+    /**
+     * Issues a new access token (and rotates the refresh token) given a valid refresh token.
+     *
+     * @param requestRefreshToken the refresh token submitted by the client
+     * @return the new {@link AuthResponse} containing rotated tokens
+     */
+    @Transactional
+    public AuthResponse refreshAccessToken(String requestRefreshToken) {
+        var refreshToken = refreshTokenService.verifyToken(requestRefreshToken);
+
+        User user = userRepository.findById(refreshToken.getUserId())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Rotate: revoke old refresh token, issue a brand new one
+        refreshTokenService.revokeToken(requestRefreshToken);
+
+        return mapToAuthResponse(user);
+    }
+
+    /**
+     * Logs the user out by revoking the specified refresh token.
+     *
+     * @param refreshToken the refresh token to revoke
+     */
+    @Transactional
+    public void logout(String refreshToken) {
+        refreshTokenService.revokeToken(refreshToken);
     }
 }

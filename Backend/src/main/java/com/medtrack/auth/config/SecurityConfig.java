@@ -1,6 +1,14 @@
 package com.medtrack.auth.config;
 
 import com.medtrack.auth.security.JwtAuthFilter;
+import com.medtrack.auth.repository.UserRepository;
+import com.medtrack.auth.model.AccountStatus;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,6 +21,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import com.medtrack.auth.security.CustomAuthenticationEntryPoint;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -64,6 +74,7 @@ import java.util.List;
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -75,6 +86,7 @@ public class SecurityConfig {
      * authentication context in Spring's SecurityContextHolder.
      */
     private final JwtAuthFilter jwtAuthFilter;
+    private final CustomAuthenticationEntryPoint customAuthenticationEntryPoint;
 
     /**
      * Configures and registers a {@link PasswordEncoder} bean.
@@ -89,6 +101,35 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public UserDetailsService userDetailsService(UserRepository userRepository) {
+        return username -> {
+            com.medtrack.auth.model.User user = userRepository.findByEmail(username)
+                    .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + username));
+            return org.springframework.security.core.userdetails.User.builder()
+                    .username(user.getEmail())
+                    .password(user.getPassword())
+                    .authorities("ROLE_" + user.getRole().toUpperCase())
+                    .disabled(user.getAccountStatus() == AccountStatus.DISABLED)
+                    .accountLocked(user.getAccountStatus() == AccountStatus.LOCKED)
+                    .build();
+        };
+    }
+
+    @Bean
+    public AuthenticationProvider authenticationProvider(UserDetailsService userDetailsService,
+            PasswordEncoder passwordEncoder) {
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+        authProvider.setUserDetailsService(userDetailsService);
+        authProvider.setPasswordEncoder(passwordEncoder);
+        return authProvider;
+    }
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
+        return config.getAuthenticationManager();
     }
 
     /**
@@ -107,64 +148,40 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 // 1. Disable CSRF (Cross-Site Request Forgery)
-                // CSRF protection is generally required for cookie-based sessions. Since this
-                // application
-                // uses stateless JWTs passed via the Authorization header, the client is not
-                // susceptible
-                // to standard CSRF attacks, allowing us to safely disable this protection.
                 .csrf(AbstractHttpConfigurer::disable)
 
                 // 2. Enable CORS (Cross-Origin Resource Sharing)
-                // Integrates the CORS configuration source bean (corsConfigurationSource) to
-                // define
-                // which client applications (origins) can make requests to our API.
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
                 // 3. Set Session Management to STATELESS
-                // Ensures that Spring Security does not create or maintain any HTTP sessions
-                // (HttpSession).
-                // Every request must be independently authenticated via the JWT token.
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 // 4. Configure URL Authorization Rules
-                // Defines access rules based on API paths, HTTP methods, and user roles.
                 .authorizeHttpRequests(auth -> auth
                         // Allow public access (no authentication required) to:
-                        // - Authentication endpoints: login and registration
-                        // - H2 database console: utilized during development for database visualization
                         .requestMatchers(
-                                "/api/user/login",
-                                "/api/user/register",
+                                "/api/auth/login",
+                                "/api/auth/register",
+                                "/api/auth/refresh-token",
+                                "/api/auth/logout",
                                 "/h2-console/**",
                                 "/actuator/**")
                         .permitAll()
 
                         // Rule set for Equipment management:
-                        // - Read (GET): Any authenticated user can view equipment details.
-                        // - Write/Modify (POST, PUT, DELETE): Restricted to users with the 'HOSPITAL'
-                        // role.
                         .requestMatchers(HttpMethod.GET, "/api/equipment/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/equipment/**").hasRole("HOSPITAL")
                         .requestMatchers(HttpMethod.PUT, "/api/equipment/**").hasRole("HOSPITAL")
                         .requestMatchers(HttpMethod.DELETE, "/api/equipment/**").hasRole("HOSPITAL")
 
                         // Rule set for Orders management:
-                        // - Read (GET): Any authenticated user can view order details.
-                        // - Creation/Removal (POST, DELETE): Restricted to users with the 'HOSPITAL'
-                        // role.
-                        // - Status Updates (PUT to /status endpoint): Restricted to suppliers
-                        // ('SUPPLIER' role).
                         .requestMatchers(HttpMethod.GET, "/api/orders/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/orders/**").hasRole("HOSPITAL")
                         .requestMatchers(HttpMethod.PUT, "/api/orders/*/status").hasRole("SUPPLIER")
                         .requestMatchers(HttpMethod.DELETE, "/api/orders/**").hasRole("HOSPITAL")
 
                         // Rule set for Maintenance schedules/tasks:
-                        // - Read (GET): Any authenticated user can view maintenance tasks.
-                        // - Creation/Removal (POST, DELETE): Restricted to users with the 'HOSPITAL'
-                        // role.
-                        // - Editing/Completion (PUT): Restricted to technicians ('TECHNICIAN' role).
                         .requestMatchers(HttpMethod.GET, "/api/maintenance/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/maintenance/**").hasRole("HOSPITAL")
                         .requestMatchers(HttpMethod.PUT, "/api/maintenance/**").hasRole("TECHNICIAN")
@@ -175,18 +192,13 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
 
                 // 5. Register Custom JWT Filter
-                // Inject jwtAuthFilter BEFORE UsernamePasswordAuthenticationFilter.
-                // This ensures that the incoming request has its JWT token parsed and the
-                // SecurityContext
-                // populated with authentication details before standard password/session
-                // authentication checks.
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
 
+                // 5b. Exception Handling for Unauthorized Requests
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint(customAuthenticationEntryPoint))
+
                 // 6. Disable X-Frame-Options headers
-                // Disables frame options specifically to allow H2 Console to render inside an
-                // <iframe>.
-                // Spring Security by default blocks frame rendering (DENY) to prevent
-                // clickjacking attacks.
                 .headers(headers -> headers.frameOptions(options -> options.disable()));
 
         return http.build();
