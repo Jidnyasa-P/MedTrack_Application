@@ -20,6 +20,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import com.medtrack.auth.security.CustomAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -151,7 +153,11 @@ public class SecurityConfig {
                     "/api/auth/register",
                     "/api/auth/refresh-token",
                     "/api/auth/logout",
-                    "/h2-console/**"
+                    "/api/auth/forgot-password",
+                    "/api/auth/verify-otp",
+                    "/api/auth/reset-password",
+                    "/h2-console/**",
+                    "/error"
                 ).permitAll()
 
                 // Rule set for Equipment management:
