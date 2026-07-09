@@ -153,6 +153,9 @@ public class SecurityConfig {
                     "/api/auth/register",
                     "/api/auth/refresh-token",
                     "/api/auth/logout",
+                    "/api/auth/forgot-password",
+                    "/api/auth/verify-otp",
+                    "/api/auth/reset-password",
                     "/h2-console/**",
                     "/error"
                 ).permitAll()
