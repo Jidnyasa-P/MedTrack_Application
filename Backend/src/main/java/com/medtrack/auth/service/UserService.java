@@ -2,6 +2,7 @@ package com.medtrack.auth.service;
 
 import com.medtrack.auth.dto.AuthResponse;
 import com.medtrack.auth.dto.LoginRequest;
+import com.medtrack.auth.dto.LoginResponse;
 import com.medtrack.auth.dto.RegisterRequest;
 import com.medtrack.auth.dto.UserResponse;
 import com.medtrack.auth.model.User;
@@ -156,36 +157,51 @@ public class UserService {
 
     /**
      * Authenticates an existing user by matching their login credentials against stored credentials.
+     * <p>
+     * Security notes:
+     * <ul>
+     *   <li>Email is normalised to lowercase before lookup to avoid case-sensitivity issues.</li>
+     *   <li>A generic "Invalid credentials" error is returned for wrong email, wrong password,
+     *       <em>and</em> wrong role so that callers cannot enumerate valid email addresses.</li>
+     * </ul>
      *
-     * @param loginRequest DTO containing the user's login email and plain text password
-     * @return the {@link AuthResponse} containing user profile information and generated JWT token
-     * @throws BadCredentialsException if the email address does not exist or if the passwords do not match
+     * @param loginRequest DTO containing the user's login email, plain-text password, and requested role
+     * @return the {@link LoginResponse} containing the user profile and a signed JWT access token
+     * @throws BadCredentialsException if credentials or role do not match
      */
-    @Transactional(noRollbackFor = {BadCredentialsException.class, LockedException.class, UsernameNotFoundException.class})
-    public AuthResponse login(LoginRequest loginRequest) {
-        User user = userRepository.findByEmail(loginRequest.getEmail())
-                .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + loginRequest.getEmail()));
+    @Transactional(noRollbackFor = {BadCredentialsException.class, LockedException.class})
+    public LoginResponse login(LoginRequest loginRequest) {
+        // Normalize email to lowercase before lookup
+        String normalizedEmail = loginRequest.getEmail().trim().toLowerCase();
+
+        // Use a generic error message to avoid revealing whether the email exists (anti-enumeration)
+        final BadCredentialsException invalidCredentials =
+                new BadCredentialsException("Invalid credentials. Please check your email, password, and role.");
+
+        User user = userRepository.findByEmail(normalizedEmail)
+                .orElseThrow(() -> invalidCredentials);
 
         // Check if user account is locked
         if (user.getAccountStatus() == AccountStatus.LOCKED || user.getAccountLockedUntil() != null) {
             if (user.getAccountLockedUntil() != null && LocalDateTime.now().isAfter(user.getAccountLockedUntil())) {
-                // Lock expired - perform automatic unlock
+                // Lock expired – perform automatic unlock
                 user.setAccountStatus(AccountStatus.ACTIVE);
                 user.setAccountLockedUntil(null);
                 user.setFailedLoginAttempts(0);
                 user = userRepository.save(user);
             } else {
-                throw new LockedException("Account is temporarily locked.");
+                throw new LockedException("Account is temporarily locked. Please try again later.");
             }
         }
 
-        try {
-            // Authenticate credentials using Spring Security's AuthenticationManager
-            authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(loginRequest.getEmail(), loginRequest.getPassword())
-            );
-        } catch (BadCredentialsException e) {
-            // Only increment failed attempts if the account status is ACTIVE.
+        // Verify role: compare the stored role against the requested role (both uppercased)
+        String requestedRole = loginRequest.getRole().toUpperCase();
+        if (!user.getRole().toUpperCase().equals(requestedRole)) {
+            throw invalidCredentials;
+        }
+
+        // Verify password using bcrypt
+        if (!passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
             if (user.getAccountStatus() == AccountStatus.ACTIVE) {
                 int newAttempts = user.getFailedLoginAttempts() + 1;
                 if (newAttempts >= 5) {
@@ -197,10 +213,10 @@ public class UserService {
                 }
                 userRepository.save(user);
             }
-            throw e;
+            throw invalidCredentials;
         }
 
-        // On successful login: reset failedLoginAttempts and clear lock values
+        // Successful login: reset failed-attempt counters
         user.setFailedLoginAttempts(0);
         user.setAccountLockedUntil(null);
         user.setAccountStatus(AccountStatus.ACTIVE);
@@ -209,6 +225,7 @@ public class UserService {
         // Generate response payload containing user info and a new JWT token
         return mapToAuthResponse(savedUser, "Login successful");
     }
+
 
     /**
      * Helper mapping method to transform a {@link User} domain model entity into a response-friendly

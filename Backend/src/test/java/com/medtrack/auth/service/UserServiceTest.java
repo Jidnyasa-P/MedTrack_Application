@@ -2,6 +2,7 @@ package com.medtrack.auth.service;
 
 import com.medtrack.auth.dto.AuthResponse;
 import com.medtrack.auth.dto.LoginRequest;
+import com.medtrack.auth.dto.LoginResponse;
 import com.medtrack.auth.dto.RegisterRequest;
 import com.medtrack.exception.EmailAlreadyExistsException;
 import com.medtrack.auth.model.RefreshToken;
@@ -271,7 +272,7 @@ public class UserServiceTest {
 
     @Test
     void login_Success() {
-        LoginRequest request = new LoginRequest("test@example.com", "password123");
+        LoginRequest request = new LoginRequest("test@example.com", "password123", "HOSPITAL");
         User user = User.builder()
                 .id(1L)
                 .name("Test User")
@@ -292,17 +293,16 @@ public class UserServiceTest {
             return rt;
         });
 
-        AuthResponse response = userService.login(request);
+        LoginResponse response = userService.login(request);
 
         assertNotNull(response);
         assertNotNull(response.getToken());
         assertFalse(response.getToken().isEmpty());
-        assertNotNull(response.getRefreshToken());
     }
 
     @Test
     void login_UserNotFound_ThrowsException() {
-        LoginRequest request = new LoginRequest("test@example.com", "password123");
+        LoginRequest request = new LoginRequest("test@example.com", "password123", "HOSPITAL");
 
         when(userRepository.findByEmail(request.getEmail())).thenReturn(Optional.empty());
 
@@ -311,7 +311,7 @@ public class UserServiceTest {
 
     @Test
     void login_PasswordMismatch_ThrowsException() {
-        LoginRequest request = new LoginRequest("test@example.com", "wrong_password");
+        LoginRequest request = new LoginRequest("test@example.com", "wrong_password", "HOSPITAL");
         User user = User.builder()
                 .id(1L)
                 .username("testuser")
@@ -330,7 +330,7 @@ public class UserServiceTest {
 
     @Test
     void login_FailedAttemptsIncremented() {
-        LoginRequest request = new LoginRequest("test@example.com", "wrong_password");
+        LoginRequest request = new LoginRequest("test@example.com", "wrong_password", "HOSPITAL");
         User user = User.builder()
                 .id(1L)
                 .email("test@example.com")
@@ -348,7 +348,7 @@ public class UserServiceTest {
 
     @Test
     void login_AccountLockedAfter5Failures() {
-        LoginRequest request = new LoginRequest("test@example.com", "wrong_password");
+        LoginRequest request = new LoginRequest("test@example.com", "wrong_password", "HOSPITAL");
         User user = User.builder()
                 .id(1L)
                 .email("test@example.com")
@@ -368,7 +368,7 @@ public class UserServiceTest {
 
     @Test
     void login_LockedAccountRejected() {
-        LoginRequest request = new LoginRequest("test@example.com", "password123");
+        LoginRequest request = new LoginRequest("test@example.com", "password123", "HOSPITAL");
         User user = User.builder()
                 .id(1L)
                 .email("test@example.com")
@@ -385,7 +385,7 @@ public class UserServiceTest {
 
     @Test
     void login_LockedAccountAutoUnlockedAfterCooldown() {
-        LoginRequest request = new LoginRequest("test@example.com", "password123");
+        LoginRequest request = new LoginRequest("test@example.com", "password123", "HOSPITAL");
         User user = User.builder()
                 .id(1L)
                 .email("test@example.com")
@@ -406,7 +406,7 @@ public class UserServiceTest {
             return rt;
         });
 
-        AuthResponse response = userService.login(request);
+        LoginResponse response = userService.login(request);
 
         assertNotNull(response);
         assertEquals(AccountStatus.ACTIVE, user.getAccountStatus());
