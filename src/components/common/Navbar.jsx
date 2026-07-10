@@ -106,7 +106,13 @@ export default function Navbar({ onNavigate, currentPage }) {
                   </div>
                   <span className="text-sm text-primary font-medium">{user.name}</span>
                 </div>
-                <button onClick={logout} className="text-sm font-bold text-primary hover:text-blue-600">
+                <button
+                  onClick={() => {
+                    logout();
+                    onNavigate("landing");
+                  }}
+                  className="text-sm font-bold text-primary hover:text-blue-600"
+                >
                   Log out
                 </button>
               </>
