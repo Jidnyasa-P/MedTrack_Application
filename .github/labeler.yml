@@ -1,14 +1,19 @@
 frontend:
-  - src/**/*
-  - public/**/*
-  - package.json
-  - tailwind.config.js
+  - changed-files:
+    - any-glob-to-any-file:
+      - src/**/*
+      - public/**/*
+      - package.json
+      - tailwind.config.js
 
 backend:
-  - Backend/**/*
+  - changed-files:
+    - any-glob-to-any-file: Backend/**/*
 
 documentation:
-  - '**/*.md'
+  - changed-files:
+    - any-glob-to-any-file: '**/*.md'
 
 workflows:
-  - .github/workflows/**/*
+  - changed-files:
+    - any-glob-to-any-file: .github/workflows/**/*
