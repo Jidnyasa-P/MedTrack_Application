@@ -1,20 +1,34 @@
 name: PR Size Labeler
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+  pull_request:
+    types: [opened]
+
+permissions:
+  pull-requests: write
 
 jobs:
   size-label:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
     steps:
-      - name: Size labeler
-        uses: codelytv/pr-size-labeler@v1
+      - name: Add ECSoC26 Level Label
+        uses: actions/github-script@v7
         with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          xs_max_size: '10'
-          s_max_size: '100'
-          m_max_size: '500'
-          l_max_size: '1000'
-          fail_if_xl: 'false'
+          script: |
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            const linesChanged = pullRequest.additions + pullRequest.deletions;
+            let label = 'ECSoC26-L3';
+            if (linesChanged <= 50) {
+              label = 'ECSoC26-L1';
+            } else if (linesChanged <= 250) {
+              label = 'ECSoC26-L2';
+            }
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: [label]
+            });
