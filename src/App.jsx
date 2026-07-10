@@ -16,7 +16,7 @@ function AppContent() {
     setPageData(data);
   };
 
-  const noLayoutPages = ["login", "register"];
+  const noLayoutPages = ["login", "register", "forgot-password", "verify-otp", "reset-password"];
   const isAuthPage = noLayoutPages.includes(currentPage);
 
   return (
