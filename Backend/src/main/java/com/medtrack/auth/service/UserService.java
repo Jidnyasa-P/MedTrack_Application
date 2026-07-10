@@ -3,8 +3,10 @@ package com.medtrack.auth.service;
 import com.medtrack.auth.dto.AuthResponse;
 import com.medtrack.auth.dto.LoginRequest;
 import com.medtrack.auth.dto.RegisterRequest;
+import com.medtrack.auth.dto.UserResponse;
 import com.medtrack.auth.model.User;
 import com.medtrack.auth.model.AccountStatus;
+import com.medtrack.exception.EmailAlreadyExistsException;
 import com.medtrack.auth.repository.UserRepository;
 import com.medtrack.auth.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
@@ -104,14 +106,14 @@ public class UserService {
      */
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        // Enforce username uniqueness constraint prior to registration
-        if (userRepository.existsByUsername(request.getUsername())) {
-            throw new RuntimeException("Username already exists");
+        // Validate passwords match
+        if (!request.getPassword().equals(request.getConfirmPassword())) {
+            throw new IllegalArgumentException("Passwords do not match");
         }
 
         // Enforce email uniqueness constraint prior to registration
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Email already exists");
+            throw new EmailAlreadyExistsException("Email already exists");
         }
 
         // Normalize the role string casing to uppercase for consistency in authorization checks; defaults to HOSPITAL
@@ -119,14 +121,27 @@ public class UserService {
 
         // Validate that the assigned role is mapped to one of the authorized application roles
         if (!VALID_ROLES.contains(role)) {
-            throw new RuntimeException("Invalid role. Must be one of: HOSPITAL, TECHNICIAN, SUPPLIER");
+            throw new IllegalArgumentException("Invalid role. Must be one of: HOSPITAL, TECHNICIAN, SUPPLIER");
+        }
+
+        // Normalize email to lowercase
+        String email = request.getEmail().toLowerCase();
+
+        // Generate unique username from email prefix
+        String emailPrefix = email.split("@")[0];
+        String username = emailPrefix;
+        int count = 1;
+        while (userRepository.existsByUsername(username)) {
+            username = emailPrefix + count++;
         }
 
         // Map the RegisterRequest DTO to the User database entity and encode raw password
         User user = User.builder()
                 .name(request.getName())
-                .username(request.getUsername())
-                .email(request.getEmail())
+                .organization(request.getOrganization())
+                .email(email)
+                .phone(request.getPhone())
+                .username(username)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(role)
                 .accountStatus(AccountStatus.ACTIVE)
@@ -136,7 +151,7 @@ public class UserService {
         User savedUser = userRepository.save(user);
 
         // Map the persisted user to authentication response payload containing JWT token
-        return mapToAuthResponse(savedUser);
+        return mapToAuthResponse(savedUser, "Account created successfully");
     }
 
     /**
@@ -192,7 +207,7 @@ public class UserService {
         User savedUser = userRepository.save(user);
 
         // Generate response payload containing user info and a new JWT token
-        return mapToAuthResponse(savedUser);
+        return mapToAuthResponse(savedUser, "Login successful");
     }
 
     /**
@@ -200,21 +215,35 @@ public class UserService {
      * DTO payload, generating a secure JWT token containing the user's authentication details.
      *
      * @param user the authenticated {@link User} entity
+     * @param message the authentication success message to include
      * @return the fully populated {@link AuthResponse} object
      */
-    private AuthResponse mapToAuthResponse(User user) {
-        // Request a new JWT token signed with user's email and role claims
-        String token = jwtUtil.generateToken(user.getEmail(), user.getRole());
+    private AuthResponse mapToAuthResponse(User user, String message) {
+        // Request a new JWT token signed with user's ID, email and role claims
+        String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getRole());
         String refreshToken = refreshTokenService.createRefreshToken(user.getId()).getToken();
+
+        UserResponse userResponse = UserResponse.builder()
+                .id(user.getId())
+                .name(user.getName())
+                .email(user.getEmail())
+                .phone(user.getPhone())
+                .organization(user.getOrganization())
+                .role(user.getRole())
+                .build();
 
         // Build and return the response DTO
         return AuthResponse.builder()
+                .success(true)
+                .message(message)
+                .user(userResponse)
+                .token(token)
+                // Legacy fields for flat object backwards-compatibility
                 .id(user.getId())
                 .name(user.getName())
                 .username(user.getUsername())
                 .email(user.getEmail())
                 .role(user.getRole())
-                .token(token)
                 .refreshToken(refreshToken)
                 .expiresIn(TOKEN_EXPIRATION_MS)
                 .build();
@@ -236,7 +265,7 @@ public class UserService {
         // Rotate: revoke old refresh token, issue a brand new one
         refreshTokenService.revokeToken(requestRefreshToken);
 
-        return mapToAuthResponse(user);
+        return mapToAuthResponse(user, "Token refreshed successfully");
     }
 
     /**

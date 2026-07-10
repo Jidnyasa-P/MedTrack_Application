@@ -11,6 +11,7 @@ import com.medtrack.auth.model.User;
 import com.medtrack.auth.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;
@@ -35,7 +36,7 @@ public class AuthController {
      */
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest registerRequest) {
-        return ResponseEntity.ok(userService.register(registerRequest));
+        return ResponseEntity.status(HttpStatus.CREATED).body(userService.register(registerRequest));
     }
 
     /**
