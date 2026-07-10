@@ -54,6 +54,9 @@ public class UserServiceTest {
     @Mock
     private EmailService emailService;
 
+    @Mock
+    private KafkaEventPublisher kafkaEventPublisher;
+
     private final JwtUtil jwtUtil = new JwtUtil();
 
     private RefreshTokenService refreshTokenService;
@@ -63,7 +66,7 @@ public class UserServiceTest {
     void setUp() {
         refreshTokenService = new RefreshTokenService(refreshTokenRepository);
         ReflectionTestUtils.setField(refreshTokenService, "refreshExpirationDays", 7L);
-        userService = new UserService(userRepository, passwordEncoder, jwtUtil, refreshTokenService, authenticationManager, passwordResetTokenRepository, emailService);
+        userService = new UserService(userRepository, passwordEncoder, jwtUtil, refreshTokenService, authenticationManager, passwordResetTokenRepository, emailService, kafkaEventPublisher);
         ReflectionTestUtils.setField(userService, "lockDurationMinutes", 30);
     }
 
