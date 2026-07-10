@@ -3,6 +3,7 @@ services:
   - type: web
     name: medtrack-backend
     env: docker
+    plan: free
     dockerfilePath: Backend/Dockerfile
     repo: https://github.com/kRamu81/MedTrack_Application
     branch: main
